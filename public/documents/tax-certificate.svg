@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="850" viewBox="0 0 700 850">
+  <rect width="700" height="850" fill="#fff"/><rect x="30" y="30" width="640" height="790" rx="8" fill="none" stroke="#e2e4e9" stroke-width="2"/>
+  <g font-family="Arial, sans-serif"><text x="65" y="110" font-size="16" fill="#425590">VIRTUAL ACCOUNT ADMIN</text><text x="65" y="165" font-size="30" fill="#111827">Sample tax document</text><text x="65" y="205" font-size="15" fill="#61616a">Mock merchant upload · For demonstration only</text><path d="M65 245H635" stroke="#e2e4e9"/><text x="65" y="300" font-size="16" fill="#111827">Tax registration certificate</text><text x="65" y="340" font-size="14" fill="#61616a">This sample demonstrates image preview and download.</text><text x="65" y="380" font-size="14" fill="#61616a">It is not an official registration or tax certificate.</text></g>
+</svg>
