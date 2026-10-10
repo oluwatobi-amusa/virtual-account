@@ -37,7 +37,6 @@ import {
   DATA_KEY,
   DataState,
   Fields,
-  FilterSelect,
   PageHeading,
   Pagination,
   PAGE_SIZE,
@@ -52,7 +51,7 @@ import {
 
 function TillAccounts({ merchant, tills }: { merchant: Merchant; tills: Till[] }) {
   const [search, setSearch] = useState('');
-  const [business, setBusiness] = useState('All businesses');
+  const [business, setBusiness] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Till | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,8 +62,7 @@ function TillAccounts({ merchant, tills }: { merchant: Merchant; tills: Till[] }
   const filtered = accounts.filter(
     (t) =>
       `${t.name} ${t.number}`.toLowerCase().includes(search.trim().toLowerCase()) &&
-      (business === 'All businesses' ||
-        merchant.businesses.find((b) => b.id === t.businessId)?.name === business)
+      (!business || t.businessId === business)
   );
   async function disable() {
     if (!selected || submitting.current) return;
@@ -98,25 +96,41 @@ function TillAccounts({ merchant, tills }: { merchant: Merchant; tills: Till[] }
             }}
             placeholder="Search account name or number"
           />
-          {merchant.businesses.length > 1 && (
-            <FilterSelect
-              label="Business"
+          <label className="flex flex-wrap items-center gap-3 text-sm font-medium">
+            Business name
+            <select
+              aria-label="Filter till accounts by business"
               value={business}
-              onChange={(value) => {
-                setBusiness(value);
+              onChange={(event) => {
+                setBusiness(event.target.value);
                 setPage(1);
               }}
-              options={['All businesses', ...merchant.businesses.map((b) => b.name)]}
-            />
-          )}
+              className="rounded-md border bg-white px-3 py-2 text-sm font-normal"
+            >
+              <option value="">All businesses</option>
+              {merchant.businesses.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <RecordsTable
-          columns={['Account name', 'Account number', 'Current balance', 'Status', 'Action']}
+          columns={[
+            'Account name',
+            'Business name',
+            'Account number',
+            'Current balance',
+            'Status',
+            'Action'
+          ]}
           empty={accounts.length ? undefined : 'No till accounts for this merchant.'}
           rows={filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((t) => [
             <span key="name" className="font-medium">
               {t.name}
             </span>,
+            merchant.businesses.find((item) => item.id === t.businessId)?.name || 'Not provided',
             t.number,
             money(t.balance),
             <StatusBadge key="status" status={t.status} />,
@@ -195,17 +209,26 @@ function TillAccounts({ merchant, tills }: { merchant: Merchant; tills: Till[] }
 
 export default function MerchantDetails({
   merchantId,
-  initialTab = 'profile'
+  initialTab = 'profile',
+  initialBusinessId = ''
 }: {
   merchantId: string;
   initialTab?: string;
+  initialBusinessId?: string;
 }) {
   const query = useDashboard();
-  const [businessId, setBusinessId] = useState('');
+  const queryClient = useQueryClient();
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState('');
+  const restoreSubmitting = useRef(false);
+  const [businessId, setBusinessId] = useState(initialBusinessId);
   const [preview, setPreview] = useState<UploadedDocument | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [tab, setTab] = useState(initialTab);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const uploadSubmitting = useRef(false);
   if (!query.data) return <DataState query={query} />;
   const merchant = query.data.merchants.find((m) => m.id === merchantId);
   if (!merchant)
@@ -219,6 +242,64 @@ export default function MerchantDetails({
       </div>
     );
   const business = merchant.businesses.find((b) => b.id === businessId) || merchant.businesses[0];
+  async function uploadDocument(file: File, label: string, selectedBusinessId: string) {
+    if (!merchant || uploadSubmitting.current) return;
+    setUploadError('');
+    if (
+      !['application/pdf', 'image/png', 'image/jpeg'].includes(file.type) ||
+      !file.size ||
+      file.size > 2 * 1024 * 1024
+    ) {
+      setUploadError('Choose a PDF, PNG or JPEG document, up to 2 MB.');
+      return;
+    }
+    uploadSubmitting.current = true;
+    setUploading(true);
+    try {
+      const url = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('The document could not be read.'));
+        reader.readAsDataURL(file);
+      });
+      await virtualAccountsService.uploadDocument(merchant.id, selectedBusinessId, {
+        label,
+        filename: file.name,
+        type: file.type as UploadedDocument['type'],
+        url,
+        size: `${(file.size / 1024).toFixed(1)} KB`
+      });
+      await queryClient.invalidateQueries({ queryKey: DATA_KEY });
+      toast.success('Document submitted. Business verification is pending review.');
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : 'The document could not be saved. Please retry.';
+      setUploadError(message);
+      toast.error(message);
+    } finally {
+      uploadSubmitting.current = false;
+      setUploading(false);
+    }
+  }
+  async function restore() {
+    if (!merchant || restoreSubmitting.current) return;
+    restoreSubmitting.current = true;
+    setRestoring(true);
+    setRestoreError('');
+    try {
+      await virtualAccountsService.restoreMerchant(merchant.id);
+      await queryClient.invalidateQueries({ queryKey: DATA_KEY });
+      toast.success(`${merchant.name} has been restored.`);
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : 'Could not restore this merchant. Please retry.';
+      setRestoreError(message);
+      toast.error(message);
+    } finally {
+      restoreSubmitting.current = false;
+      setRestoring(false);
+    }
+  }
   async function openPreview(document: UploadedDocument) {
     setPreview(document);
     setPreviewLoading(true);
@@ -240,8 +321,25 @@ export default function MerchantDetails({
           description={merchant.email}
           back={{ href: '/dashboard/merchants', label: 'Back to Merchants' }}
         />
-        <StatusBadge status={merchant.status} />
+        <div className="flex items-center gap-3">
+          <StatusBadge status={merchant.status} />
+          {merchant.status === 'Suspended' && (
+            <Button
+              disabled={restoring}
+              onClick={() => {
+                void restore();
+              }}
+            >
+              {restoring ? 'Restoring…' : 'Restore merchant'}
+            </Button>
+          )}
+        </div>
       </div>
+      {restoreError && (
+        <p role="alert" className="text-sm text-red-600">
+          {restoreError}
+        </p>
+      )}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-4 rounded-full">
           <TabsTrigger value="profile" className="rounded-full">
@@ -282,6 +380,15 @@ export default function MerchantDetails({
             <AccordionItem value="documents" className="rounded-lg border bg-white px-5">
               <AccordionTrigger>Uploaded documents</AccordionTrigger>
               <AccordionContent>
+                <p className="mb-3 text-xs text-gray-500">
+                  Upload or replace documents to submit them for verification. PDF, PNG or JPEG, up
+                  to 2 MB each.
+                </p>
+                {uploadError && (
+                  <p role="alert" className="mb-3 text-sm text-red-600">
+                    {uploadError}
+                  </p>
+                )}
                 <div className="grid gap-3 xl:grid-cols-3">
                   {['CAC Doc', 'MEMART', 'Tax Document'].map((label) => {
                     const document = business?.documents.find((d) => d.label === label);
@@ -319,6 +426,28 @@ export default function MerchantDetails({
                           </>
                         ) : (
                           <p className="text-xs text-gray-500">Not uploaded</p>
+                        )}
+                        {business && (
+                          <div className="mt-3 space-y-1">
+                            <label
+                              htmlFor={`document-${business.id}-${label}`}
+                              className="text-xs font-medium"
+                            >
+                              {document ? 'Replace document' : 'Upload document'}
+                            </label>
+                            <input
+                              id={`document-${business.id}-${label}`}
+                              type="file"
+                              accept="application/pdf,image/png,image/jpeg"
+                              disabled={uploading}
+                              className="block w-full min-w-0 text-xs file:mr-2 file:rounded-md file:border file:bg-white file:px-2 file:py-1 file:text-xs"
+                              onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = '';
+                                if (file) void uploadDocument(file, label, business.id);
+                              }}
+                            />
+                          </div>
                         )}
                       </div>
                     );

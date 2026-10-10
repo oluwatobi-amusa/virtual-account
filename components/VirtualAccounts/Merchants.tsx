@@ -112,6 +112,7 @@ export default function Merchants() {
             'Till accounts',
             'Date created',
             'Status',
+            'Verification',
             'Action'
           ]}
           empty={merchants.length ? undefined : 'No merchants yet.'}
@@ -126,6 +127,7 @@ export default function Merchants() {
               accounts.length,
               date(m.createdAt),
               <StatusBadge key="status" status={m.status} />,
+              <StatusBadge key="verification" status={m.verification.status} />,
               <Button
                 key="action"
                 asChild

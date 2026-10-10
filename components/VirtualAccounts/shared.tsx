@@ -82,7 +82,7 @@ export function PageHeading({
 }
 export function StatusBadge({ status }: { status: string }) {
   const color =
-    status === 'Active' || status === 'Successful'
+    status === 'Active' || status === 'Successful' || status === 'Approved'
       ? 'border-green-200 bg-green-50 text-green-700'
       : status === 'Pending'
         ? 'border-orange-200 bg-orange-50 text-orange-700'

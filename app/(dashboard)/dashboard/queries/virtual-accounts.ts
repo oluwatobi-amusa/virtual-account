@@ -1,4 +1,14 @@
-import { DashboardData, Merchant, Till, Transaction } from '../types/virtual-accounts';
+import {
+  DashboardData,
+  Business,
+  Merchant,
+  Till,
+  Transaction,
+  UploadedDocument,
+  VerificationStatus
+} from '../types/virtual-accounts';
+
+export const REQUIRED_DOCUMENTS = ['CAC Doc', 'MEMART', 'Tax Document'];
 
 const names = [
   'Adebayo Retail',
@@ -13,6 +23,20 @@ const names = [
   'Jade Hospitality',
   'Kora Ventures',
   'Lagos Books'
+];
+const people = [
+  ['Tunde', 'Adebayo'],
+  ['Amaka', 'Okafor'],
+  ['Chidi', 'Obi'],
+  ['Zainab', 'Bello'],
+  ['Bola', 'Adeyemi'],
+  ['Fatima', 'Hassan'],
+  ['Emeka', 'Nwosu'],
+  ['Funke', 'Ojo'],
+  ['Ife', 'Adekunle'],
+  ['Aisha', 'Yusuf'],
+  ['Kola', 'Balogun'],
+  ['Ngozi', 'Eze']
 ];
 const documents = [
   {
@@ -37,15 +61,20 @@ const documents = [
 ];
 const merchants: Merchant[] = names.map((name, i) => ({
   id: `merchant-${i + 1}`,
-  name,
-  email: `hello@${name.toLowerCase().replace(/ /g, '')}.ng`,
+  name: people[i].join(' '),
+  email: `${people[i].join('.').toLowerCase()}@example.com`,
   createdAt: `2026-${String(1 + (i % 9)).padStart(2, '0')}-${String(4 + i).padStart(2, '0')}`,
   status: i % 4 === 2 ? 'Suspended' : 'Active',
-  firstName: ['Tunde', 'Amaka', 'Chidi', 'Zainab'][i % 4],
-  lastName: ['Adebayo', 'Okafor', 'Obi', 'Bello'][i % 4],
+  verification: {
+    status: 'Pending',
+    submittedAt: `2026-10-${String(1 + (i % 9)).padStart(2, '0')}T09:30:00+01:00`
+  },
+  firstName: people[i][0],
+  lastName: people[i][1],
   phone: i === 8 ? undefined : `+234 803 450 ${String(1200 + i)}`,
   bvnLastFour: String(4200 + i),
   businesses: Array.from({ length: i === 0 ? 2 : 1 }, (_, j) => ({
+    status: 'Pending',
     id: `business-${i + 1}-${j + 1}`,
     name: j ? 'Adebayo Wholesale' : `${name} Limited`,
     registrationType: 'Limited liability company',
@@ -54,7 +83,14 @@ const merchants: Merchant[] = names.map((name, i) => ({
     registrationDate: `2024-03-${String(10 + i).padStart(2, '0')}`,
     email: j ? 'wholesale@adebayoretail.ng' : `business@${name.toLowerCase().replace(/ /g, '')}.ng`,
     address: `${12 + i} Adeola Odeku Street, Victoria Island, Lagos`,
-    documents: j ? [documents[0]] : documents.slice(0, i % 3 === 1 ? 2 : 3)
+    verification: {
+      status: 'Pending',
+      submittedAt: `2026-10-${String(1 + (i % 9)).padStart(2, '0')}T09:30:00+01:00`
+    },
+    documents: (j ? [documents[0]] : documents.slice(0, i % 3 === 1 ? 2 : 3)).map((document) => ({
+      ...document,
+      uploadedAt: `2026-10-${String(1 + (i % 9)).padStart(2, '0')}T09:30:00+01:00`
+    }))
   }))
 }));
 const tills: Till[] = merchants.flatMap((merchant, i) =>
@@ -62,7 +98,7 @@ const tills: Till[] = merchants.flatMap((merchant, i) =>
     id: `till-${i + 1}-${j + 1}`,
     merchantId: merchant.id,
     businessId: merchant.businesses[j % merchant.businesses.length].id,
-    name: `${merchant.name} ${j === 0 ? 'Main' : `Branch ${j}`}`,
+    name: `${names[i]} ${j === 0 ? 'Main' : `Branch ${j}`}`,
     number: `0${String(123456780 + i * 10 + j)}`,
     balance: Math.round((125000 + i * 34000 + j * 7250.5) * 100) / 100,
     status: j === 1 && i % 3 === 0 ? 'Disabled' : 'Active'
@@ -84,7 +120,118 @@ const transactions: Transaction[] = tills.flatMap((till, i) =>
 );
 
 const STORAGE_KEY = 'virtual-account-disabled-tills-v1';
+const RESTORED_MERCHANTS_KEY = 'virtual-account-restored-merchants-v1';
+const VERIFICATION_KEY = 'virtual-account-business-verifications-v2';
+const UPLOADS_KEY = 'virtual-account-document-uploads-v1';
+interface SavedUpload {
+  merchantId: string;
+  businessId: string;
+  document: UploadedDocument;
+}
+function readUploads(): SavedUpload[] {
+  const value: unknown = JSON.parse(localStorage.getItem(UPLOADS_KEY) || '[]');
+  if (
+    !Array.isArray(value) ||
+    value.some(
+      (item) =>
+        !item ||
+        typeof item.merchantId !== 'string' ||
+        typeof item.businessId !== 'string' ||
+        !item.document ||
+        !REQUIRED_DOCUMENTS.includes(item.document.label) ||
+        typeof item.document.filename !== 'string' ||
+        typeof item.document.url !== 'string' ||
+        !['application/pdf', 'image/png', 'image/jpeg'].includes(item.document.type) ||
+        !item.document.url.startsWith(`data:${item.document.type};base64,`) ||
+        typeof item.document.uploadedAt !== 'string' ||
+        !Number.isFinite(Date.parse(item.document.uploadedAt))
+    )
+  )
+    throw new Error('Saved document uploads could not be read.');
+  return value;
+}
+function currentMerchants(): Merchant[] {
+  const uploads = readUploads();
+  return merchants.map((merchant) => ({
+    ...merchant,
+    businesses: merchant.businesses.map((business) => {
+      const replacements = uploads
+        .filter((item) => item.merchantId === merchant.id && item.businessId === business.id)
+        .map((item) => item.document);
+      return {
+        ...business,
+        documents: [
+          ...business.documents.filter(
+            (document) => !replacements.some((item) => item.label === document.label)
+          ),
+          ...replacements
+        ]
+      };
+    })
+  }));
+}
+interface VerificationDecision {
+  merchantId: string;
+  businessId: string;
+  status: 'Approved' | 'Declined';
+  reason?: string;
+  reviewedAt: string;
+  submission: string;
+}
+function submissionKey(business: Business) {
+  return JSON.stringify([business.id, business.documents]);
+}
+function readVerifications(): VerificationDecision[] {
+  let saved = localStorage.getItem(VERIFICATION_KEY);
+  if (!saved) {
+    const legacy: unknown = JSON.parse(
+      localStorage.getItem('virtual-account-verifications-v1') || '[]'
+    );
+    if (!Array.isArray(legacy)) throw new Error('Saved verification decisions could not be read.');
+    const migrated: VerificationDecision[] = [];
+    for (const merchant of currentMerchants()) {
+      const previous = legacy.find(
+        (item) =>
+          item &&
+          item.merchantId === merchant.id &&
+          item.submission ===
+            JSON.stringify(merchant.businesses.map((business) => [business.id, business.documents]))
+      );
+      if (previous) {
+        for (const business of merchant.businesses)
+          migrated.push({
+            ...previous,
+            businessId: business.id,
+            submission: submissionKey(business)
+          });
+      }
+    }
+    saved = JSON.stringify(migrated);
+  }
+  const value: unknown = JSON.parse(saved);
+  if (
+    !Array.isArray(value) ||
+    value.some(
+      (item) =>
+        !item ||
+        typeof item.merchantId !== 'string' ||
+        typeof item.businessId !== 'string' ||
+        !['Approved', 'Declined'].includes(item.status) ||
+        typeof item.submission !== 'string' ||
+        typeof item.reviewedAt !== 'string' ||
+        (item.status === 'Declined' && (typeof item.reason !== 'string' || !item.reason.trim()))
+    )
+  )
+    throw new Error('Saved verification decisions could not be read.');
+  return value;
+}
 const delay = () => new Promise<void>((resolve) => setTimeout(resolve, 350));
+function readRestoredMerchants(): string[] {
+  const value: unknown = JSON.parse(localStorage.getItem(RESTORED_MERCHANTS_KEY) || '[]');
+  if (!Array.isArray(value) || value.some((id) => typeof id !== 'string'))
+    throw new Error('Saved merchant settings could not be read.');
+  return value;
+}
 function readDisabled(): string[] {
   const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
   if (!Array.isArray(value) || value.some((id) => typeof id !== 'string'))
@@ -97,14 +244,166 @@ export const virtualAccountsService = {
   async getDashboard(): Promise<DashboardData> {
     await delay();
     const disabled = readDisabled();
+    const restored = readRestoredMerchants();
+    const decisions = readVerifications();
+    const dashboardMerchants: Merchant[] = currentMerchants().map((merchant) => {
+      const businesses = merchant.businesses.map((business): Business => {
+        const decision = decisions.find(
+          (item) =>
+            item.merchantId === merchant.id &&
+            item.businessId === business.id &&
+            item.submission === submissionKey(business)
+        );
+        const submittedAt =
+          business.documents
+            .map((document) => document.uploadedAt)
+            .sort((a, b) => Date.parse(a) - Date.parse(b))
+            .at(-1) || merchant.createdAt;
+        return {
+          ...business,
+          status:
+            decision?.status === 'Approved'
+              ? 'Active'
+              : decision?.status === 'Declined'
+                ? 'Declined'
+                : 'Pending',
+          verification: decision
+            ? {
+                submittedAt,
+                status: decision.status,
+                reason: decision.reason,
+                reviewedAt: decision.reviewedAt
+              }
+            : { status: 'Pending', submittedAt }
+        };
+      });
+      const submittedAt =
+        merchant.businesses
+          .flatMap((business) => business.documents.map((document) => document.uploadedAt))
+          .sort()
+          .at(-1) || merchant.createdAt;
+      return {
+        ...merchant,
+        businesses,
+        status: restored.includes(merchant.id) ? 'Active' : merchant.status,
+        verification: {
+          submittedAt,
+          status: businesses.some((business) => business.verification.status === 'Pending')
+            ? 'Pending'
+            : businesses.some((business) => business.verification.status === 'Declined')
+              ? 'Declined'
+              : businesses.length
+                ? 'Approved'
+                : 'Pending'
+        }
+      };
+    });
     return {
-      merchants,
+      merchants: dashboardMerchants,
       transactions,
       tills: tills.map((till) => ({
         ...till,
-        status: disabled.includes(till.id) ? 'Disabled' : till.status
+        status:
+          disabled.includes(till.id) || till.status === 'Disabled'
+            ? 'Disabled'
+            : dashboardMerchants
+                  .find((merchant) => merchant.id === till.merchantId)
+                  ?.businesses.find((business) => business.id === till.businessId)?.status ===
+                'Active'
+              ? 'Active'
+              : 'Pending'
       }))
     };
+  },
+  async reviewBusiness(
+    id: string,
+    businessId: string,
+    status: Exclude<VerificationStatus, 'Pending'>,
+    reason = ''
+  ): Promise<void> {
+    await delay();
+    const merchant = currentMerchants().find((item) => item.id === id);
+    if (!merchant) throw new Error('Merchant not found.');
+    const business = merchant.businesses.find((item) => item.id === businessId);
+    if (!business) throw new Error('Merchant business not found.');
+    if (!['Approved', 'Declined'].includes(status))
+      throw new Error('Invalid verification decision.');
+    if (status === 'Declined' && !reason.trim())
+      throw new Error('Enter a reason for declining verification.');
+    if (reason.trim().length > 1000)
+      throw new Error('The reason must be 1,000 characters or fewer.');
+    if (
+      status === 'Approved' &&
+      REQUIRED_DOCUMENTS.some(
+        (label) => !business.documents.some((document) => document.label === label)
+      )
+    )
+      throw new Error('All required documents must be uploaded before approval.');
+    const decisions = readVerifications();
+    const submission = submissionKey(business);
+    if (
+      decisions.some(
+        (item) =>
+          item.merchantId === id && item.businessId === businessId && item.submission === submission
+      )
+    )
+      throw new Error('This submission has already been reviewed. Refresh the verification queue.');
+    localStorage.setItem(
+      VERIFICATION_KEY,
+      JSON.stringify([
+        ...decisions.filter((item) => !(item.merchantId === id && item.businessId === businessId)),
+        {
+          merchantId: id,
+          businessId,
+          status,
+          reason: status === 'Declined' ? reason.trim() : undefined,
+          reviewedAt: new Date().toISOString(),
+          submission
+        }
+      ])
+    );
+  },
+  async uploadDocument(
+    merchantId: string,
+    businessId: string,
+    document: Omit<UploadedDocument, 'uploadedAt'>
+  ): Promise<void> {
+    await delay();
+    const merchant = merchants.find((item) => item.id === merchantId);
+    if (!merchant?.businesses.some((business) => business.id === businessId))
+      throw new Error('Merchant business not found.');
+    if (!REQUIRED_DOCUMENTS.includes(document.label)) throw new Error('Invalid document category.');
+    if (
+      !['application/pdf', 'image/png', 'image/jpeg'].includes(document.type) ||
+      !document.url.startsWith(`data:${document.type};base64,`) ||
+      !document.filename.trim()
+    )
+      throw new Error('Upload a PDF, PNG or JPEG document.');
+    if (document.url.length > 2800000) throw new Error('Documents must be 2 MB or smaller.');
+    const uploads = readUploads();
+    localStorage.setItem(
+      UPLOADS_KEY,
+      JSON.stringify([
+        ...uploads.filter(
+          (item) =>
+            !(
+              item.merchantId === merchantId &&
+              item.businessId === businessId &&
+              item.document.label === document.label
+            )
+        ),
+        { merchantId, businessId, document: { ...document, uploadedAt: new Date().toISOString() } }
+      ])
+    );
+  },
+  async restoreMerchant(id: string): Promise<void> {
+    await delay();
+    if (!merchants.some((merchant) => merchant.id === id)) throw new Error('Merchant not found.');
+    const restored = readRestoredMerchants();
+    localStorage.setItem(
+      RESTORED_MERCHANTS_KEY,
+      JSON.stringify(Array.from(new Set([...restored, id])))
+    );
   },
   async disableTill(id: string): Promise<void> {
     await delay();

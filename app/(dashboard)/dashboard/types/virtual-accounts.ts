@@ -1,14 +1,23 @@
 export type MerchantStatus = 'Active' | 'Suspended';
-export type TillStatus = 'Active' | 'Disabled';
+export type TillStatus = 'Active' | 'Pending' | 'Disabled';
 export type TransactionStatus = 'Successful' | 'Pending' | 'Failed';
+export type VerificationStatus = 'Pending' | 'Approved' | 'Declined';
+export interface MerchantVerification {
+  status: VerificationStatus;
+  submittedAt: string;
+  reviewedAt?: string;
+  reason?: string;
+}
 export interface UploadedDocument {
   label: string;
   filename: string;
-  type: 'application/pdf' | 'image/svg+xml';
+  type: 'application/pdf' | 'image/svg+xml' | 'image/png' | 'image/jpeg';
   size?: string;
   url: string;
+  uploadedAt: string;
 }
 export interface Business {
+  status: 'Active' | 'Pending' | 'Declined';
   id: string;
   name: string;
   registrationType?: string;
@@ -18,6 +27,7 @@ export interface Business {
   email?: string;
   address?: string;
   documents: UploadedDocument[];
+  verification: MerchantVerification;
 }
 export interface Merchant {
   id: string;
@@ -25,6 +35,7 @@ export interface Merchant {
   email: string;
   createdAt: string;
   status: MerchantStatus;
+  verification: MerchantVerification;
   firstName: string;
   lastName: string;
   phone?: string;

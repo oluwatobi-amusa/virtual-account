@@ -4,15 +4,16 @@ export default async function Page({
   searchParams
 }: {
   params: Promise<{ merchantId: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; business?: string }>;
 }) {
   const { merchantId } = await params;
-  const { tab } = await searchParams;
+  const { tab, business } = await searchParams;
   return (
     <MerchantDetails
-      key={`${merchantId}-${tab || 'profile'}`}
+      key={`${merchantId}-${tab || 'profile'}-${business || ''}`}
       merchantId={merchantId}
       initialTab={tab === 'tills' ? 'tills' : 'profile'}
+      initialBusinessId={business}
     />
   );
 }

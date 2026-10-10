@@ -1,5 +1,5 @@
 import { IconType } from 'react-icons/lib';
-import { BiBookAlt } from 'react-icons/bi';
+import { BiBookAlt, BiCheckShield } from 'react-icons/bi';
 import { BsFillGridFill } from 'react-icons/bs';
 import { HiUsers } from 'react-icons/hi2';
 
@@ -20,5 +20,6 @@ export const LINKS: SideBarLinks = [
     icon: BsFillGridFill
   },
   { name: 'Merchants', url: '/dashboard/merchants', icon: HiUsers },
+  { name: 'Document Verification', url: '/dashboard/document-verification', icon: BiCheckShield },
   { name: 'Disputes', url: '/dashboard/disputes', icon: BiBookAlt }
 ];
