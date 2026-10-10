@@ -42,6 +42,10 @@ Till accounts include a business-name column and a business filter for every mer
 
 ## Verification
 
+For Vercel, use npm with the committed `package-lock.json`: install with `npm ci`
+and build with `npm run build`. The project `.npmrc` preserves the legacy peer
+dependency setting required by the existing React and ESLint packages.
+
 Run `npm run check-types` and `node --test tests/virtual-accounts.test.cjs`.
 
 For manual lookup checks, use:

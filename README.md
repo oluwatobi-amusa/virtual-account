@@ -25,13 +25,13 @@ git clone https://github.com/hackib-dev/starter-pack.git
 gh repo clone hackib-dev/starter-pack
 
 cd starter-pack
-yarn
-yarn dev
+npm ci
+npm run dev
 
-# yarn dev (run application in development mode)
-# yarn build (build apps)
-# yarn lint (Eslint Check)
-# yarn format (Format code with prettier)
+# npm run dev (run application in development mode)
+# npm run build (build apps)
+# npm run lint (Eslint Check)
+# npm run format (Format code with prettier)
 ```
 
 ## Environmental Variables 🌳
